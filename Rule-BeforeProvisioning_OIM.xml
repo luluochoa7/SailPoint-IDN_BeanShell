@@ -1,0 +1,504 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Rule PUBLIC "sailpoint.dtd" "sailpoint.dtd">
+<Rule language="beanshell" type="BeforeProvisioning" name="CBI_BeforeProvisioning_OIM">
+<Description/>
+<Source><![CDATA[
+				
+	import sailpoint.object.ProvisioningPlan;
+	import sailpoint.object.ProvisioningPlan.AccountRequest;
+	import sailpoint.object.ProvisioningPlan.AttributeRequest;
+	import sailpoint.object.ProvisioningPlan.AccountRequest.Operation;
+	import sailpoint.tools.Util;
+	import sailpoint.object.Identity;
+	import sailpoint.object.Application;
+	import java.util.ArrayList;
+	import java.util.List;
+
+    /*
+	 * This method returns all the requested entitlement from the AccessRequest
+	 * object accntRequest : This holds the request details
+	 */
+	public List getRequestedAccessList(AccountRequest accntRequest)
+	{
+		log.info("Entering getRequestedAccessList method");
+		List requestedRoles = null;
+		List attrReqList = accntRequest.getAttributeRequests("ROLE_NAME");
+
+		if (null != attrReqList && !attrReqList.isEmpty())
+		{
+			requestedRoles = new ArrayList();
+
+			for (AttributeRequest attrReq : attrReqList)
+			{
+				if (null != attrReq.getValue() && attrReq.getValue() instanceof String)
+				{
+					requestedRoles.add(attrReq.getValue());
+				}
+				else if (null != attrReq.getValue() && attrReq.getValue() instanceof List)
+				{
+					List groupList = (List) attrReq.getValue();
+
+					for (String group : groupList)
+					{
+						requestedRoles.add(group);
+					}
+				}
+			}
+		}
+
+		log.info("Exiting getRequestedAccessList method");
+		return requestedRoles;
+	}
+
+    /*
+	 * Method to return existing OIM roles of the user
+	 * @return existingRoles: list of roles
+	 */
+	public List getRolesFromOIMAccount(AccountRequest accntRequest)
+	{
+		log.info("Entering getRolesFromOIMAccount method");
+
+		List existingRoles = new ArrayList();
+		Identity identity = plan.getIdentity();
+		Object oimRole = null;
+
+		String nativeId = accntRequest.getNativeIdentity();
+		String applicationName = application.getName();
+
+		if (null != identity)
+		{
+			oimRole = idn.getRawAccountAttribute(applicationName, nativeId, "ROLE_NAME");
+
+			if (oimRole instanceof String)
+			{
+				String role = (String) oimRole;
+				existingRoles.add(role);
+			}
+			else if (oimRole instanceof List)
+			{
+				List roleList = (List) oimRole;
+				existingRoles.addAll(roleList);
+			}
+		}
+		log.info("Exiting getRolesFromOIMAccount method");
+		return existingRoles;
+	}
+
+	/*
+	 * This method is used to set the entitlement attributeRequest
+	 * attrValue : holds entitlemnt value 
+	 * attrName : holds attribute name ROLE_NAME
+	 */
+	public AttributeRequest removeAttributeRequest(String attrValue, String attrName)
+	{
+		log.info("Entering removeAttributeRequest method");
+
+		AttributeRequest attributeRequest = new AttributeRequest();
+		if (null != attributeRequest && null != attrValue && null != attrName)
+		{
+			attributeRequest.setName(attrName);
+			attributeRequest.setOperation(ProvisioningPlan.Operation.Remove);
+			attributeRequest.setValue(attrValue);
+		}
+
+		log.info("Exiting removeAttributeRequest method");
+		return attributeRequest;
+	}
+
+	/*
+	 * This method is used to check if user already have Informatica MDM Material Master role of same instance (source)
+     * if yes then remove previous role before adding new requested
+	 * @return accntRequest: updated accntRequest to remove existing role 
+	 */
+	public AccountRequest checkAndRemoveMaterialMasterOIMRole(String roleName, List mdmCoreGroup, String mdmBPRole, AccountRequest accntRequest)
+    {
+		log.debug("Entering OIM before provisioning rule : checkAndRemoveMaterialMasterOIMRole method");
+        // check if user is already have a role of same Informatica instance(Source)
+        List entList = getRolesFromOIMAccount(accntRequest);
+        if (null != entList && !entList.isEmpty())
+        {
+            for (String entValue: entList)
+            {
+				if(mdmCoreGroup.contains(entValue))
+				{
+					//do nothing
+				}
+                else if (entValue.startsWith(mdmBPRole))
+                {
+                    //do nothing
+                }
+				else if(roleName.equalsIgnoreCase("CBI-IAM-INF-MDM"))
+				{
+					if (entValue.startsWith("CBI-IAM-INF-MDM-DEV"))
+					{
+						// do nothing
+					}
+					else if (entValue.startsWith("CBI-IAM-INF-MDM-TEST"))
+					{
+						// do nothing
+					}
+					else if (entValue.startsWith("CBI-IAM-INF-MDM-STAGE"))
+					{
+						// do nothing
+					}
+					else
+					{
+						accntRequest.add(removeAttributeRequest(entValue, "ROLE_NAME"));
+					}
+				}
+				else if (entValue.startsWith(roleName))
+				{
+					// remove role from OIM AccountCBI-IAM-INF-MDM
+					accntRequest.add(removeAttributeRequest(entValue, "ROLE_NAME"));
+				}
+            }
+        }
+		log.debug("Exiting OIM before provisioning rule : checkAndRemoveMaterialMasterOIMRole method");
+		return accntRequest;
+    }
+    
+	/*
+	 * This method is used to check if user already have Informatica role of same instance (source)
+     * if yes then remove previous role before adding new requested
+	 * @return accntRequest: updated accntRequest to remove existing role
+	 */
+	public AccountRequest checkAndRemoveOIMRole(String roleName, AccountRequest accntRequest)
+    {
+		log.debug("Entering OIM before provisioning rule : checkAndRemoveOIMRole method");
+        // check if user is already have a role of same Informatica instance(Source)
+        List entList = getRolesFromOIMAccount(accntRequest);
+        if (null != entList && !entList.isEmpty())
+        {
+            for (String entValue: entList)
+            {
+				if(roleName.equalsIgnoreCase("CBI-IAM-INF-AXON"))
+				{
+					if (entValue.startsWith("CBI-IAM-INF-AXON-DEV"))
+					{
+						// do nothing
+					}
+					else
+					{
+						accntRequest.add(removeAttributeRequest(entValue, "ROLE_NAME"));
+					}
+				}
+				else if(roleName.equalsIgnoreCase("CBI-IAM-INF-EDC"))
+				{
+					if (entValue.startsWith("CBI-IAM-INF-EDC-DEV"))
+					{
+						// do nothing
+					}
+					else
+					{
+						accntRequest.add(removeAttributeRequest(entValue, "ROLE_NAME"));
+					}
+				}
+				else if(roleName.equalsIgnoreCase("CBI-IAM-INF-IDQ"))
+				{
+					if (entValue.startsWith("CBI-IAM-INF-IDQ-DEV"))
+					{
+						// do nothing
+					}
+					else if (entValue.startsWith("CBI-IAM-INF-IDQ-TEST"))
+					{
+						// do nothing
+					}
+					else if (entValue.startsWith("CBI-IAM-INF-IDQ-STAGE"))
+					{
+						// do nothing
+					}
+					else
+					{
+						accntRequest.add(removeAttributeRequest(entValue, "ROLE_NAME"));
+					}
+				}
+				else if(roleName.equalsIgnoreCase("CBI-IAM-INF-MDM"))
+				{
+					if (entValue.startsWith("CBI-IAM-INF-MDM-DEV"))
+					{
+						// do nothing
+					}
+					else if (entValue.startsWith("CBI-IAM-INF-MDM-TEST"))
+					{
+						// do nothing
+					}
+					else if (entValue.startsWith("CBI-IAM-INF-MDM-STAGE"))
+					{
+						// do nothing
+					}
+					else
+					{
+						accntRequest.add(removeAttributeRequest(entValue, "ROLE_NAME"));
+					}
+				}
+                else if (entValue.startsWith(roleName))
+                {
+                    // remove role from OIM Account
+                    accntRequest.add(removeAttributeRequest(entValue, "ROLE_NAME"));
+				}
+            }
+        }
+		log.debug("Exiting OIM before provisioning rule : checkAndRemoveOIMRole method");
+		return accntRequest;
+    }
+
+	/*
+	 * This method will get the account object from the provisioning plan
+	 * @plan ProvisioningPlan object
+	 */
+	public AccountRequest getAccountRequest(ProvisioningPlan plan) {
+		log.debug("Entering OIM before provisioning rule : getAccountRequest method");
+
+		AccountRequest accntRequest = null;
+		if (null != plan && !plan.isEmpty())
+		{
+		  List accRequests = plan.getAccountRequests();
+		  if (null != accRequests && !accRequests.isEmpty())
+		  {
+			for (AccountRequest acctRequest : accRequests)
+			{
+			  String appName = acctRequest.getApplication();
+			  if (null != appName && appName.startsWith("OIM"))
+			  {
+				accntRequest = new AccountRequest();
+				accntRequest = acctRequest;
+				break;
+			  }
+			}
+		  }
+		}
+		log.debug("Exiting OIM before provisioning rule : getAccountRequest method");
+		return accntRequest;
+	}
+
+	/* 
+	* This is main method
+	*/
+
+	log.info("---------------------OIM_BeforeProvisioning_Rule Start----------------------------");
+
+	log.debug("Entering OIM BeforeProvisioningRule :");
+
+	if (plan != null) {
+
+		Identity identity = plan.getIdentity();
+        String AXON_ROLE = "CBI-IAM-INF-AXON";
+        String EDC_ROLE = "CBI-IAM-INF-EDC";
+        String IDQ_ROLE = "CBI-IAM-INF-IDQ";
+		
+		String AXON_DEV_ROLE = "CBI-IAM-INF-AXON-DEV-";
+        String EDC_DEV_ROLE = "CBI-IAM-INF-EDC-DEV-";
+        String IDQ_DEV_ROLE = "CBI-IAM-INF-IDQ-DEV-";
+		
+		String IDQ_TEST_ROLE = "CBI-IAM-INF-IDQ-TEST-";
+		String IDQ_STAGE_ROLE = "CBI-IAM-INF-IDQ-STAGE-";
+		
+		//MDM Core Roles
+		List mdmCoreGroup = new ArrayList();
+        mdmCoreGroup.add("CBI-IAM-INF-MDM-ADMINS");
+        mdmCoreGroup.add("CBI-IAM-INF-MDM-OPERATORS");
+        mdmCoreGroup.add("CBI-IAM-INF-MDM-ANALYSTS");
+        mdmCoreGroup.add("CBI-IAM-INF-MDM-AUDITOR");
+		mdmCoreGroup.add("CBI-IAM-INF-MDM-BUSINESS");
+		mdmCoreGroup.add("CBI-IAM-INF-MDM-REFMGMT");
+		
+		List mdmDevCoreGroup = new ArrayList();
+        mdmDevCoreGroup.add("CBI-IAM-INF-MDM-DEV-ADMINS");
+        mdmDevCoreGroup.add("CBI-IAM-INF-MDM-DEV-ANALYSTS");
+        mdmDevCoreGroup.add("CBI-IAM-INF-MDM-DEV-BUSINESS");
+		mdmDevCoreGroup.add("CBI-IAM-INF-MDM-DEV-REFMGMT");
+		
+		List mdmTestCoreGroup = new ArrayList();
+        mdmTestCoreGroup.add("CBI-IAM-INF-MDM-TEST-ADMINS");
+        mdmTestCoreGroup.add("CBI-IAM-INF-MDM-TEST-ANALYSTS");
+        mdmTestCoreGroup.add("CBI-IAM-INF-MDM-TEST-BUSINESS");
+		mdmTestCoreGroup.add("CBI-IAM-INF-MDM-TEST-REFMGMT");
+		
+		List mdmStageCoreGroup = new ArrayList();
+        mdmStageCoreGroup.add("CBI-IAM-INF-MDM-STAGE-ADMINS");
+        mdmStageCoreGroup.add("CBI-IAM-INF-MDM-STAGE-OPERATORS");
+        mdmStageCoreGroup.add("CBI-IAM-INF-MDM-STAGE-ANALYSTS");
+        mdmStageCoreGroup.add("CBI-IAM-INF-MDM-STAGE-BUSINESS");
+		mdmStageCoreGroup.add("CBI-IAM-INF-MDM-STAGE-REFMGMT");
+		
+		//MDM Business Partner Role
+		String MDM_DEV_BP_ROLE = "CBI-IAM-INF-MDM-DEV-BP";
+		String MDM_TEST_BP_ROLE = "CBI-IAM-INF-MDM-TEST-BP";
+		String MDM_STAGE_BP_ROLE = "CBI-IAM-INF-MDM-STAGE-BP";
+		String MDM_BP_ROLE = "CBI-IAM-INF-MDM-BP";
+		
+		//MDM Role
+		String MDM_DEV_ROLE = "CBI-IAM-INF-MDM-DEV-";
+		String MDM_TEST_ROLE = "CBI-IAM-INF-MDM-TEST-";
+		String MDM_STAGE_ROLE = "CBI-IAM-INF-MDM-STAGE-";
+		String MDM_ROLE = "CBI-IAM-INF-MDM";
+
+		
+		String cloudLifecycleState = null;
+
+		if(null!=identity) {
+
+		  AccountRequest accntRequest = getAccountRequest(plan);
+
+		  if (null != accntRequest) {
+			cloudLifecycleState = identity.getAttribute("cloudLifecycleState");
+			accntRequest.addArgument("IDN_LCS", cloudLifecycleState);
+
+            if ((accntRequest.getOperation()).equals(ProvisioningPlan.AccountRequest.Operation.Modify))
+            {
+                // This is for Informatica logic for Add / Remove OIM Roles
+				List attributeRequests = accntRequest.getAttributeRequests();
+
+                // Removing
+                if (null != attributeRequests && !attributeRequests.isEmpty())
+                {
+					boolean flag = false;
+                    log.debug("Iterating to get the requested entitlement and the entitlement operation");
+
+                    for (AttributeRequest attributeRequest : attributeRequests)
+                    {
+                        if (null != attributeRequest)
+                        {
+                            if (null != attributeRequest.getName() && "ROLE_NAME".equalsIgnoreCase(attributeRequest.getName()))
+                            {
+                                if (null != attributeRequest.getOperation())
+                                {
+                                    if (attributeRequest.getOperation().equals(sailpoint.object.ProvisioningPlan.Operation.Add))
+                                    {
+                                        log.info("Retrieving all the requested entitlements");
+                                        List entList1 = getRequestedAccessList(accntRequest);
+
+                                        if (null != entList1 && !entList1.isEmpty())
+                                        {
+                                            for (String entValue1 : entList1)
+                                            {
+                                                // Checking and removing role, if user already have some role from same Informatica instance before adding new requested one
+												if (entValue1.startsWith(AXON_DEV_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(AXON_DEV_ROLE, accntRequest);
+													flag = true;
+                                                }
+                                                else if (entValue1.startsWith(AXON_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(AXON_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(EDC_DEV_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(EDC_DEV_ROLE, accntRequest);
+													flag = true;
+                                                }
+                                                else if (entValue1.startsWith(EDC_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(EDC_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(IDQ_DEV_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(IDQ_DEV_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(IDQ_TEST_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(IDQ_TEST_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(IDQ_STAGE_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(IDQ_STAGE_ROLE, accntRequest);
+													flag = true;
+                                                }
+                                                else if (entValue1.startsWith(IDQ_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(IDQ_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(MDM_DEV_BP_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_DEV_BP_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(MDM_TEST_BP_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_TEST_BP_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(MDM_STAGE_BP_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_STAGE_BP_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(MDM_BP_ROLE))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_BP_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (mdmDevCoreGroup.contains(entValue1))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_DEV_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (mdmTestCoreGroup.contains(entValue1))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_TEST_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (mdmStageCoreGroup.contains(entValue1))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_STAGE_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (mdmCoreGroup.contains(entValue1))
+                                                {
+                                                    accntRequest = checkAndRemoveOIMRole(MDM_ROLE, accntRequest);
+													flag = true;
+                                                }
+												else if (entValue1.startsWith(MDM_DEV_ROLE))
+												{
+													accntRequest = checkAndRemoveMaterialMasterOIMRole(MDM_DEV_ROLE, mdmDevCoreGroup, MDM_DEV_BP_ROLE, accntRequest);
+													flag = true;
+												}
+												else if (entValue1.startsWith(MDM_TEST_ROLE))
+												{
+													accntRequest = checkAndRemoveMaterialMasterOIMRole(MDM_TEST_ROLE, mdmTestCoreGroup, MDM_TEST_BP_ROLE, accntRequest);
+													flag = true;
+												}
+												else if (entValue1.startsWith(MDM_STAGE_ROLE))
+												{
+													accntRequest = checkAndRemoveMaterialMasterOIMRole(MDM_STAGE_ROLE, mdmStageCoreGroup, MDM_STAGE_BP_ROLE, accntRequest);
+													flag = true;
+												}
+												else if (entValue1.startsWith(MDM_ROLE))
+												{
+													accntRequest = checkAndRemoveMaterialMasterOIMRole(MDM_ROLE, mdmCoreGroup, MDM_BP_ROLE, accntRequest);
+													flag = true;
+												}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+						if(flag)
+						{
+							break;
+						}
+                    }
+                }
+            }
+		  }
+		}
+		else {
+			log.error("Identity is null or empty");
+			throw new Exception("Identity is null or empty");
+		}
+	}
+	else {
+		log.error("Provisioning Plan is null or empty");
+		throw new Exception("Provisioning Plan is null or empty");
+	}
+
+	log.info("Exiting OIM BeforeProvisioningRule");
+
+	]]></Source>
+</Rule>
